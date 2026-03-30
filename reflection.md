@@ -4,13 +4,25 @@
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+For my initial design I identified four classes: `Pet`, `CareTask`, `Owner`, and `Scheduler`.
+
+`Pet` is a simple data-holding class responsible for storing information about an individual animal — its name, species, and optional age. It doesn't make any decisions; it just represents the subject of all the care tasks.
+
+`CareTask` is also a data class. Its responsibility is to describe a single care activity — what it is, how long it takes, and how urgent it is. I gave it a priority attribute with three levels (high, medium, low) so the scheduler would have something to rank tasks by.
+
+`Owner` represents the person using the app. It holds the owner's name, how much time they have available in a day, and a list of their pets. I gave it an `add_pet()` method so pets can be registered to an owner rather than being standalone objects.
+
+`Scheduler` is the most behaviorally complex class. Its responsibility is to take an owner and a list of tasks and produce a feasible daily plan. I gave it a `build_plan()` method to handle the selection and ordering logic, and an `explain_plan()` method to produce a human-readable summary of what was scheduled and what was skipped.
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Yes, my design changed after reviewing the skeleton before writing any logic.
+
+The first change was adding a `pet` attribute to `CareTask`. In my original UML, tasks and pets were completely separate — a task had no idea which animal it belonged to. I realized that once you have multiple pets, the schedule output would be ambiguous. Linking a task back to a specific `Pet` makes it possible to say "Morning walk → Mochi" instead of just listing task titles.
+
+The second change was adding priority validation. My original design used a plain string for `priority`, which meant anything could be passed in without error. I added a `VALID_PRIORITIES` constant and used `__post_init__` — a dataclass hook that runs right after the object is created — to raise a `ValueError` if the value isn't one of `"low"`, `"medium"`, or `"high"`. This prevents silent bugs where a misspelled priority would sort incorrectly in the scheduler.
+
+The third change was adding a reset and a guard to `Scheduler`. I added `self.schedule = []` as the first line of `build_plan()` so that calling it multiple times doesn't stack results. I also added an early return in `explain_plan()` in case it gets called before `build_plan()` has run, which would otherwise produce a confusing empty output.
 
 ---
 

@@ -1,5 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
+
+
+VALID_PRIORITIES = {"low", "medium", "high"}
 
 
 @dataclass
@@ -17,6 +20,11 @@ class CareTask:
     title: str
     duration_minutes: int
     priority: str = "medium"
+    pet: Optional[Pet] = None
+
+    def __post_init__(self):
+        if self.priority not in VALID_PRIORITIES:
+            raise ValueError(f"Invalid priority '{self.priority}'. Must be one of: {VALID_PRIORITIES}")
 
     def __str__(self) -> str:
         pass
@@ -45,7 +53,8 @@ class Scheduler:
         pass
 
     def build_plan(self) -> None:
-        pass
+        self.schedule = []  # reset on every call
 
     def explain_plan(self) -> str:
-        pass
+        if not self.schedule:
+            return "No plan built yet. Call build_plan() first."
