@@ -1,26 +1,94 @@
-# PawPal+ (Module 2 Project)
+# PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that builds a realistic, priority-ordered daily care plan for pet owners. It fits tasks into an available-time budget, sorts them into a logical day order, flags scheduling conflicts before they become problems, and automatically reschedules recurring tasks so nothing falls through the cracks.
 
-## Scenario
+## Features
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+### Priority-based scheduling with backfill
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+`Scheduler.build_plan()` selects tasks in strict priority order (high → medium → low). After the first pass, a backfill loop re-scans skipped tasks to fill any remaining gaps with shorter items — so every available minute is used, not just the first tasks that fit.
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+```
+High-priority tasks are always scheduled before medium or low ones.
+Shorter low-priority tasks can fill leftover time that a longer task cannot.
+```
 
-## What you will build
+### Chronological sorting by time of day
 
-Your final app should:
+Every task carries a `preferred_time` field: `morning`, `afternoon`, `evening`, or `any`. After selecting which tasks fit the budget, the scheduler re-sorts the final plan in chronological slot order so the displayed schedule reads like a real day rather than a priority-ranked list.
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+```
+morning → afternoon → evening → any
+```
+
+The same `sort_by_time()` method is available for ad-hoc sorting in the UI, keeping display logic out of the data model.
+
+### Three recurrence modes
+
+Completing a task via `Task.mark_complete()` automatically calculates the next due date using Python's `timedelta`:
+
+| Frequency | Next due date |
+| --- | --- |
+| `daily` | today + 1 day |
+| `weekly` | today + 7 days |
+| `as needed` | none — task is not rescheduled |
+
+`Scheduler.mark_task_complete()` wraps this and re-registers the follow-up task with the pet, so the next `build_plan()` call picks it up automatically.
+
+### Three-tier conflict detection
+
+Two checks run at the end of every `build_plan()` call. They append human-readable warnings to `scheduler.conflicts` without ever crashing the program:
+
+| Tier | Condition | Severity |
+| --- | --- | --- |
+| Slot budget exceeded | A pet's combined task time in one slot exceeds that slot's share of the daily budget (morning 40 %, afternoon 35 %, evening 25 %) | Warning |
+| Same-pet conflict | One pet has more than one task in the same named time slot | Error — a pet cannot do two things at once |
+| Owner overlap | Different pets both need attention in the same slot | Warning — the owner cannot be in two places at once |
+
+The UI surfaces each tier with a distinct visual treatment (`st.error` vs `st.warning`) and a plain-English fix suggestion.
+
+### Focused schedule filtering
+
+`Scheduler` exposes dedicated query methods so the UI never writes raw list comprehensions against internal state:
+
+- `get_tasks_by_pet(pet_name)` — all scheduled tasks for one pet
+- `get_tasks_by_status(completed)` — pending or completed tasks
+- `filter_by_pet_and_status(pet_name, completed)` — combined filter
+- `get_tasks_by_priority(priority)` — tasks at a given priority level
+
+Time-slot filtering is the only filter applied in the UI directly, since no scheduler method exists for it.
+
+### Streamlit UI with live conflict feedback
+
+The app provides a form-driven workflow with real-time feedback:
+
+- Three `st.metric` tiles (tasks scheduled, time used, time available) and a labeled progress bar replace the plain summary text.
+- Each conflict is its own `st.error` or `st.warning` callout placed *above* the schedule table so the owner sees problems before scrolling.
+- The schedule table uses emoji badges (🔴🟡🟢 for priority, 🌅☀️🌙 for time slot, ✅⏳ for status) for fast visual scanning.
+- A collapsible "Skipped tasks" expander lists any due tasks that did not fit the time budget.
+- A "Priority breakdown" expander shows a count and task list per priority level using `st.metric` and `st.caption`.
+
+---
+
+## Architecture
+
+```
+pawpal_system.py          Core data model and scheduling logic
+├── Task                  A single care activity (title, duration, priority,
+│                         frequency, preferred_time, recurrence dates)
+├── Pet                   A pet and its list of tasks
+├── Owner                 The pet owner, their time budget, and their pets
+└── Scheduler             Builds and explains a daily care plan
+    ├── build_plan()      Priority sort → backfill → time-slot sort → conflict checks
+    ├── sort_by_time()    Chronological slot ordering
+    ├── get_tasks_by_*()  Filtering helpers used by the UI
+    └── explain_plan()    Human-readable plan summary with skipped tasks and conflicts
+
+app.py                    Streamlit UI — form input, filter controls, display
+tests/test_pawpal.py      14 pytest tests covering sorting, recurrence, and conflict detection
+```
+
+---
 
 ## Getting started
 
@@ -32,31 +100,11 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Smarter Scheduling
+### Run the app
 
-PawPal+ goes beyond a basic to-do list with several algorithmic improvements built into `pawpal_system.py`:
-
-**Sorting by time of day**
-Tasks carry a `preferred_time` field (`morning`, `afternoon`, `evening`, or `any`). After selecting which tasks fit the daily budget, the scheduler sorts them into chronological slot order so the printed plan reads like a real day rather than a random list.
-
-**Filtering by pet and status**
-`Scheduler` exposes focused query methods — `get_tasks_by_pet()`, `get_tasks_by_status()`, and `filter_by_pet_and_status()` — so the UI and `main.py` can show exactly the slice of the schedule that is relevant (e.g. "Luna's pending tasks only").
-
-**Recurring task handling**
-`Task.mark_complete()` uses Python's `timedelta` to calculate the next due date automatically:
-
-- `daily` → `today + timedelta(days=1)`
-- `weekly` → `today + timedelta(days=7)`
-- `as needed` → no automatic recurrence
-
-`Scheduler.mark_task_complete()` calls this and re-registers the new Task with the pet, so the next `build_plan()` call picks it up without any manual setup.
-
-**Conflict detection**
-Two lightweight checks run at the end of every `build_plan()` call — they append warning strings to `scheduler.conflicts` and never crash the program:
-
-- *Slot budget exceeded* — a pet's combined task time in one slot is larger than that slot's share of the daily budget.
-- *Same-pet conflict* — one pet has more than one task assigned to the same named slot.
-- *Owner overlap* — different pets both need attention in the same slot, leaving the owner no way to be in two places at once.
+```bash
+streamlit run app.py
+```
 
 ## Testing PawPal+
 
@@ -89,15 +137,3 @@ python3 -m pytest tests/test_pawpal.py -v
 #### ★★★★☆ (4 / 5)
 
 The core scheduling pipeline — priority selection, time-budget backfill, slot sorting, and all three conflict-detection tiers — is fully covered and passing. One star is withheld because the duplicate-title guard in `add_task` silently breaks automatic recurrence registration, and there is no coverage of the Streamlit UI layer or multi-day simulation scenarios.
-
----
-
-### Suggested workflow
-
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
