@@ -44,6 +44,7 @@ Tasks carry a `preferred_time` field (`morning`, `afternoon`, `evening`, or `any
 
 **Recurring task handling**
 `Task.mark_complete()` uses Python's `timedelta` to calculate the next due date automatically:
+
 - `daily` → `today + timedelta(days=1)`
 - `weekly` → `today + timedelta(days=7)`
 - `as needed` → no automatic recurrence
@@ -52,9 +53,44 @@ Tasks carry a `preferred_time` field (`morning`, `afternoon`, `evening`, or `any
 
 **Conflict detection**
 Two lightweight checks run at the end of every `build_plan()` call — they append warning strings to `scheduler.conflicts` and never crash the program:
+
 - *Slot budget exceeded* — a pet's combined task time in one slot is larger than that slot's share of the daily budget.
 - *Same-pet conflict* — one pet has more than one task assigned to the same named slot.
 - *Owner overlap* — different pets both need attention in the same slot, leaving the owner no way to be in two places at once.
+
+## Testing PawPal+
+
+### Running the tests
+
+Activate your virtual environment first, then run:
+
+```bash
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m pytest tests/test_pawpal.py -v
+```
+
+### What the tests cover
+
+| Category | Tests | What is verified |
+| --- | --- | --- |
+| **Sorting correctness** | `test_sort_by_time_named_slots_are_chronological`, `test_sort_by_time_stable_when_all_same_slot`, `test_build_plan_display_order_is_by_time_slot` | Tasks are returned in chronological slot order (`morning → afternoon → evening → any`) both from `sort_by_time` directly and from `build_plan` end-to-end |
+| **Recurrence logic** | `test_daily_task_recurs_next_day`, `test_weekly_task_recurs_in_seven_days`, `test_as_needed_task_returns_no_recurrence`, `test_future_due_date_excludes_task_from_todays_plan`, `test_completed_daily_task_returns_next_occurrence` | Completing a daily task produces a new task due tomorrow; weekly tasks recur in 7 days; `as needed` tasks return `None`; tasks with a future `next_due_date` are correctly excluded from today's plan |
+| **Conflict detection** | `test_same_pet_same_slot_raises_conflict`, `test_different_pets_same_slot_raises_owner_overlap`, `test_any_time_tasks_never_cause_conflicts`, `test_no_conflict_when_slots_are_different` | Same-pet slot collisions and owner-overlap warnings are flagged; `any`-time tasks and tasks in separate slots produce no false positives |
+| **Core model** | `test_mark_complete_changes_status`, `test_add_task_increases_pet_task_count` | Basic `Task` and `Pet` state changes work correctly |
+
+**Total: 14 tests — 14 passing.**
+
+### Known design constraint surfaced by testing
+
+`Pet.add_task` deduplicates by title. When `Scheduler.mark_task_complete` registers the follow-up task, the original completed task (same title) is still in `pet.tasks`, causing the new task to be silently dropped. The return value of `mark_task_complete` is always correct — but the pet's task list is not automatically extended. See `test_completed_daily_task_returns_next_occurrence` for details.
+
+### Confidence level
+
+#### ★★★★☆ (4 / 5)
+
+The core scheduling pipeline — priority selection, time-budget backfill, slot sorting, and all three conflict-detection tiers — is fully covered and passing. One star is withheld because the duplicate-title guard in `add_task` silently breaks automatic recurrence registration, and there is no coverage of the Streamlit UI layer or multi-day simulation scenarios.
+
+---
 
 ### Suggested workflow
 
