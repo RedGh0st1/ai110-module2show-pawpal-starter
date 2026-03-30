@@ -216,6 +216,29 @@ class Scheduler:
         """Return the schedule sorted by preferred_time slot."""
         return sorted(self.schedule, key=lambda t: TIME_ORDER.get(t.preferred_time, 3))
 
+    def sort_by_time(self, tasks: list) -> list:
+        """Sort Task objects by their preferred_time attribute.
+
+        preferred_time can be:
+          - A named slot: "morning", "afternoon", "evening", "any"
+          - A clock string: "HH:MM"  (e.g. "09:00", "14:30")
+
+        For "HH:MM" strings the lambda converts "09:00" → (9, 0) so that
+        numeric ordering works correctly (e.g. "09:00" < "14:30").
+        Named slots without an exact time fall back to TIME_ORDER bucket values
+        so they sort after any explicit clock times.
+        """
+        def _sort_key(task: "Task"):
+            t = task.preferred_time
+            # "HH:MM" clock string — convert to (hours, minutes) tuple for numeric sort
+            if len(t) == 5 and t[2] == ":":
+                return tuple(int(x) for x in t.split(":"))
+            # Named slot — map to a comparable tuple so it interleaves correctly
+            slot_minutes = {"morning": (6, 0), "afternoon": (12, 0), "evening": (18, 0), "any": (99, 0)}
+            return slot_minutes.get(t, (99, 0))
+
+        return sorted(tasks, key=_sort_key)
+
     # ------------------------------------------------------------------
     # Explanation
     # ------------------------------------------------------------------
