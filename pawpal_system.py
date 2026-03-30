@@ -1,7 +1,7 @@
 """Data model and scheduling logic for the PawPal+ pet care planner."""
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 
@@ -27,6 +27,7 @@ class Task:
     completed: bool = False
     preferred_time: str = "any"
     last_scheduled_date: Optional[str] = None  # ISO format YYYY-MM-DD
+    next_due_date: Optional[str] = None         # ISO format YYYY-MM-DD
 
     def __post_init__(self):
         if self.priority not in VALID_PRIORITIES:
@@ -47,23 +48,60 @@ class Task:
             f"frequency={self.frequency}, time={self.preferred_time}, status={status})"
         )
 
-    def mark_complete(self) -> None:
-        """Mark this task as completed and record today's date for recurrence tracking."""
+    def mark_complete(self) -> Optional["Task"]:
+        """Mark this task done and return a new Task for the next occurrence.
+
+        Uses timedelta to calculate the next due date:
+          - "daily"  → today + timedelta(days=1)
+          - "weekly" → today + timedelta(days=7)
+          - "as needed" → no automatic recurrence; returns None
+
+        The returned Task is a fresh instance (completed=False) with
+        next_due_date pre-set so is_due_today() gates it correctly.
+        """
+        today = date.today()
         self.completed = True
-        self.last_scheduled_date = date.today().isoformat()
+        self.last_scheduled_date = today.isoformat()
+
+        if self.frequency == "daily":
+            next_due = today + timedelta(days=1)
+        elif self.frequency == "weekly":
+            next_due = today + timedelta(days=7)
+        else:
+            return None  # "as needed" tasks are not automatically rescheduled
+
+        return Task(
+            title=self.title,
+            duration_minutes=self.duration_minutes,
+            priority=self.priority,
+            frequency=self.frequency,
+            preferred_time=self.preferred_time,
+            next_due_date=next_due.isoformat(),
+        )
 
     def is_high_priority(self) -> bool:
         return self.priority == "high"
 
     def is_due_today(self) -> bool:
-        """Return True if this task should appear in today's schedule based on frequency."""
+        """Return True if this task should appear in today's schedule.
+
+        Checks next_due_date first (set by mark_complete recurrence).
+        Falls back to frequency-based logic for tasks without an explicit date.
+        """
+        today = date.today()
+
+        # If an explicit next due date was set, use it for the gate
+        if self.next_due_date is not None:
+            return date.fromisoformat(self.next_due_date) <= today
+
+        # No explicit date — fall back to frequency rules
         if self.frequency in ("daily", "as needed"):
             return True
         if self.frequency == "weekly":
             if self.last_scheduled_date is None:
                 return True
             last = date.fromisoformat(self.last_scheduled_date)
-            return (date.today() - last).days >= 7
+            return (today - last).days >= 7
         return True
 
 
@@ -200,6 +238,20 @@ class Scheduler:
     # Filtering helpers
     # ------------------------------------------------------------------
 
+    def mark_task_complete(self, task: Task) -> Optional[Task]:
+        """Mark a scheduled task done and auto-register the next occurrence with its pet.
+
+        Calls task.mark_complete() which returns a new Task pre-dated with
+        timedelta. That new Task is added back to the pet so the next
+        build_plan() call picks it up automatically.
+
+        Returns the new Task (or None for 'as needed' tasks).
+        """
+        next_task = task.mark_complete()
+        if next_task is not None and task.pet is not None:
+            task.pet.add_task(next_task)
+        return next_task
+
     def get_tasks_by_priority(self, priority: str) -> list:
         """Return scheduled tasks matching the given priority level."""
         return [t for t in self.schedule if t.priority == priority]
@@ -211,6 +263,13 @@ class Scheduler:
     def get_tasks_by_status(self, completed: bool) -> list:
         """Return scheduled tasks filtered by completion status."""
         return [t for t in self.schedule if t.completed == completed]
+
+    def filter_by_pet_and_status(self, pet_name: str, completed: bool) -> list:
+        """Return scheduled tasks matching both a specific pet name and completion status."""
+        return [
+            t for t in self.schedule
+            if t.pet and t.pet.name == pet_name and t.completed == completed
+        ]
 
     def get_tasks_sorted_by_time(self) -> list:
         """Return the schedule sorted by preferred_time slot."""
