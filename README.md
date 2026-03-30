@@ -32,6 +32,30 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Smarter Scheduling
+
+PawPal+ goes beyond a basic to-do list with several algorithmic improvements built into `pawpal_system.py`:
+
+**Sorting by time of day**
+Tasks carry a `preferred_time` field (`morning`, `afternoon`, `evening`, or `any`). After selecting which tasks fit the daily budget, the scheduler sorts them into chronological slot order so the printed plan reads like a real day rather than a random list.
+
+**Filtering by pet and status**
+`Scheduler` exposes focused query methods — `get_tasks_by_pet()`, `get_tasks_by_status()`, and `filter_by_pet_and_status()` — so the UI and `main.py` can show exactly the slice of the schedule that is relevant (e.g. "Luna's pending tasks only").
+
+**Recurring task handling**
+`Task.mark_complete()` uses Python's `timedelta` to calculate the next due date automatically:
+- `daily` → `today + timedelta(days=1)`
+- `weekly` → `today + timedelta(days=7)`
+- `as needed` → no automatic recurrence
+
+`Scheduler.mark_task_complete()` calls this and re-registers the new Task with the pet, so the next `build_plan()` call picks it up without any manual setup.
+
+**Conflict detection**
+Two lightweight checks run at the end of every `build_plan()` call — they append warning strings to `scheduler.conflicts` and never crash the program:
+- *Slot budget exceeded* — a pet's combined task time in one slot is larger than that slot's share of the daily budget.
+- *Same-pet conflict* — one pet has more than one task assigned to the same named slot.
+- *Owner overlap* — different pets both need attention in the same slot, leaving the owner no way to be in two places at once.
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.

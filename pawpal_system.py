@@ -30,6 +30,7 @@ class Task:
     next_due_date: Optional[str] = None         # ISO format YYYY-MM-DD
 
     def __post_init__(self):
+        """Validate priority and preferred_time against their allowed value sets."""
         if self.priority not in VALID_PRIORITIES:
             raise ValueError(
                 f"Invalid priority '{self.priority}'. Must be one of: {VALID_PRIORITIES}"
@@ -40,6 +41,7 @@ class Task:
             )
 
     def __str__(self) -> str:
+        """Return a readable string representation of the task."""
         pet_name = self.pet.name if self.pet else "No pet"
         status = "completed" if self.completed else "pending"
         return (
@@ -80,6 +82,7 @@ class Task:
         )
 
     def is_high_priority(self) -> bool:
+        """Return True if this task has high priority."""
         return self.priority == "high"
 
     def is_due_today(self) -> bool:
@@ -122,9 +125,11 @@ class Pet:
         self.tasks.append(task)
 
     def get_pending_tasks(self) -> list:
+        """Return all tasks that have not yet been completed."""
         return [task for task in self.tasks if not task.completed]
 
     def __str__(self) -> str:
+        """Return a readable string representation of the pet."""
         age_str = f", age={self.age}" if self.age is not None else ""
         return (
             f"Pet(name={self.name}, species={self.species}{age_str}, "
@@ -141,15 +146,18 @@ class Owner:
         self.pets: list[Pet] = []
 
     def add_pet(self, pet: Pet) -> None:
+        """Register a pet under this owner."""
         self.pets.append(pet)
 
     def get_all_tasks(self) -> list:
+        """Return every task across all of the owner's pets."""
         all_tasks = []
         for pet in self.pets:
             all_tasks.extend(pet.tasks)
         return all_tasks
 
     def get_all_pending_tasks(self) -> list:
+        """Return all incomplete tasks across every pet."""
         pending = []
         for pet in self.pets:
             pending.extend(pet.get_pending_tasks())
@@ -345,7 +353,10 @@ class Scheduler:
             if len(t) == 5 and t[2] == ":":
                 return tuple(int(x) for x in t.split(":"))
             # Named slot — map to a comparable tuple so it interleaves correctly
-            slot_minutes = {"morning": (6, 0), "afternoon": (12, 0), "evening": (18, 0), "any": (99, 0)}
+            slot_minutes = {
+                "morning": (6, 0), "afternoon": (12, 0),
+                "evening": (18, 0), "any": (99, 0),
+            }
             return slot_minutes.get(t, (99, 0))
 
         return sorted(tasks, key=_sort_key)
@@ -375,7 +386,8 @@ class Scheduler:
         all_due = [t for t in self.owner.get_all_pending_tasks() if t.is_due_today()]
         skipped = [t for t in all_due if t not in self.schedule]
         if skipped:
-            lines.append("Skipped (exceeded available time): " + ", ".join(t.title for t in skipped))
+            skipped_titles = ", ".join(t.title for t in skipped)
+            lines.append(f"Skipped (exceeded available time): {skipped_titles}")
 
         if self.conflicts:
             lines.append("\nConflicts detected:")
