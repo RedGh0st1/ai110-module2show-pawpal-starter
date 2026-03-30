@@ -211,6 +211,7 @@ class Scheduler:
         self.schedule.sort(key=lambda t: TIME_ORDER.get(t.preferred_time, 3))
 
         self._detect_conflicts()
+        self._detect_time_overlaps()
 
     def _detect_conflicts(self) -> None:
         """Flag (pet, time-slot) pairs whose total duration exceeds the slot's budget."""
@@ -232,6 +233,57 @@ class Scheduler:
                 self.conflicts.append(
                     f"{pet_name}'s {slot} tasks ({titles}) use {total} min "
                     f"but the {slot} slot budget is {budget} min."
+                )
+
+    def _detect_time_overlaps(self) -> None:
+        """Lightweight same-time conflict detection — appends warnings, never raises.
+
+        Two conflict tiers are checked for every named time slot
+        ("morning", "afternoon", "evening") in the schedule:
+
+        1. Same-pet overlap — one pet has multiple tasks in the same slot.
+           A pet can only do one thing at a time, so this is always a conflict.
+
+        2. Owner overlap — different pets both need attention in the same slot.
+           The owner can only be in one place, so this is flagged as a warning.
+
+        Tasks with preferred_time="any" are flexible by design and are skipped.
+        """
+        # Group scheduled tasks by time slot, excluding flexible "any" tasks
+        slot_map: dict[str, list[Task]] = defaultdict(list)
+        for task in self.schedule:
+            if task.preferred_time != "any":
+                slot_map[task.preferred_time].append(task)
+
+        for slot, tasks in slot_map.items():
+            if len(tasks) < 2:
+                continue
+
+            # --- Tier 1: same-pet overlap ---
+            pet_tasks: dict[str, list[Task]] = defaultdict(list)
+            for task in tasks:
+                if task.pet:
+                    pet_tasks[task.pet.name].append(task)
+
+            for pet_name, ptasks in pet_tasks.items():
+                if len(ptasks) > 1:
+                    titles = ", ".join(t.title for t in ptasks)
+                    self.conflicts.append(
+                        f"[Same-pet conflict] {pet_name} has {len(ptasks)} tasks "
+                        f"in the '{slot}' slot: {titles}"
+                    )
+
+            # --- Tier 2: owner overlap across different pets ---
+            pets_in_slot = {t.pet.name for t in tasks if t.pet}
+            if len(pets_in_slot) > 1:
+                summary = "; ".join(
+                    f"{p}: "
+                    + ", ".join(t.title for t in tasks if t.pet and t.pet.name == p)
+                    for p in sorted(pets_in_slot)
+                )
+                self.conflicts.append(
+                    f"[Owner overlap] Multiple pets need attention "
+                    f"in the '{slot}' slot — {summary}"
                 )
 
     # ------------------------------------------------------------------
